@@ -1,0 +1,560 @@
+---
+# tasks file for astra_at_ald
+- block:
+    - name: astra_at_ald | Creation of directory for repositories
+      file:
+        path: "{{ astra_at_ald_repo_dir }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+    
+    - name: astra_at_ald | Mount ISO images read-only
+      mount:
+        path: "{{ astra_at_ald_repo_dir }}/{{ item.path }}"
+        src: "{{ astra_at_ald_iso_path }}/{{ item.src }}"
+        fstype: iso9660
+        opts: ro,noauto
+        state: mounted
+      loop:
+        -  { src: '{% if ansible_facts.distribution_version == "1.7_x86-64" %}{{ astra_at_ald_iso_main_17 }}{% elif ansible_facts.distribution_version == "1.6" %}{{ astra_at_ald_iso_main_16 }}{% else %}{{ astra_at_ald_iso_main_15 }}{% endif %}', path: '{{ astra_at_ald_repo_dir_iso1 }}' }
+        -  { src: '{% if ansible_facts.distribution_version == "1.7_x86-64" %}{{ astra_at_ald_iso_update_17 }}{% elif ansible_facts.distribution_version == "1.6" %}{{ astra_at_ald_iso_update_16 }}{% else %}{{ astra_at_ald_iso_update_15 }}{% endif %}', path: '{{ astra_at_ald_repo_dir_iso2 }}' }
+    
+    - name: astra_at_ald | Synchronize file from ISO images to repositories
+      synchronize:
+        src: "{{ astra_at_ald_repo_dir }}/{{ item.src }}/"
+        dest: "{{ astra_at_ald_repo_dir }}/{{ item.dest }}"
+        recursive: yes
+      delegate_to: "{{ inventory_hostname }}"
+      loop:
+        -  { src: '{{ astra_at_ald_repo_dir_iso1 }}', dest: '{{ astra_at_ald_repo_dir_main }}' }
+        -  { src: '{{ astra_at_ald_repo_dir_iso2 }}', dest: '{{ astra_at_ald_repo_dir_update }}' }
+
+    # Не поддерживает рекурсивное копирование в версии 2.7
+    # - name: astra_at_ald | Copy file from ISO images to repositories
+    #   copy:
+    #     src: "{{ astra_at_ald_repo_dir }}/{{ item.src }}/"
+    #     dest: "{{ astra_at_ald_repo_dir }}/{{ item.dest }}"
+    #     remote_src: yes
+    #     follow: yes
+    #     mode: '0755'
+    #     owner: root
+    #     group: root
+    #   loop:
+    #     -  { src: '{{ astra_at_ald_repo_dir_iso1 }}', dest: '{{ astra_at_ald_repo_dir_main }}' }
+    #     -  { src: '{{ astra_at_ald_repo_dir_iso2 }}', dest: '{{ astra_at_ald_repo_dir_update }}' }
+    
+    - name: astra_at_ald | Unmount ISO images
+      mount:
+        path: "{{ astra_at_ald_repo_dir }}/{{ item }}"
+        state: absent
+      loop:
+        -  "{{ astra_at_ald_repo_dir_iso1 }}"
+        -  "{{ astra_at_ald_repo_dir_iso2 }}"
+  when: inventory_hostname == astra_at_ald_domain_server and astra_at_ald_repo_local_create
+
+- name: astra_at_ald | Setting repositories in sources.list
+  template:
+    src: "{{ astra_at_ald_templates_path }}/sources.list.j2"
+    dest: /etc/apt/sources.list
+    owner: root
+    group: root
+    mode: '0644'
+
+# Не поддерживает параметр "use" в версии 2.7
+# - name: astra_at_ald | Set a hostname
+#   hostname:
+#     name: "{{ inventory_hostname }}"
+#     use: systemd
+###############################################################################################
+- name: astra_at_ald | Copy the hosts file
+  template:
+    src: "{{ astra_at_ald_templates_path }}/hosts.j2"
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: astra_at_ald | Set a hostname Astra 1.6 and Astra 1.7
+  shell: hostnamectl set-hostname "{{ inventory_hostname }}"
+  when: ansible_hostname != inventory_hostname and ansible_facts.distribution_version != "1.5"
+
+- block:
+    - name: astra_at_ald | Edit the hostname file Astra 1.5
+      template:
+        src: "{{ astra_at_ald_templates_path }}/hostmame.j2"
+        dest: /etc/hostname
+        owner: root
+        group: root
+        mode: '0644'
+      register: astra_at_ald_hostname_edit
+      when: ansible_facts.distribution_version == "1.5"
+    
+    - name: astra_at_ald | Set a hostname Astra 1.5
+      shell: /etc/init.d/hostname.sh start
+      when: astra_at_ald_hostname_edit.changed
+  when: ansible_facts.distribution_version == "1.5"
+
+- block:
+    - name: astra_at_ald | Install Apache Server
+      apt:
+        name: apache2
+        state: present
+        update_cache: yes
+    
+    - name: astra_at_ald | Create a symbolic link repo
+      file:
+        src: /srv/repo/
+        path: /var/www/html/repo
+        owner: root
+        group: root
+        state: link
+    
+    - name: astra_at_ald | Setting default site Apache
+      template:
+        src: "{{ astra_at_ald_templates_path }}/000-default.conf.j2"
+        dest: /etc/apache2/sites-available/000-default.conf
+        owner: root
+        group: root
+        mode: '0644'
+      register: astra_at_ald_apache_default_site
+    
+    - name: astra_at_ald | Configure file apache2.conf
+      lineinfile:
+        path: /etc/apache2/apache2.conf
+        regexp: '^# AstraMode on'
+        line: AstraMode off
+      register: astra_at_ald_apache_config
+    
+    - name: astra_at_ald | Restart service Apache
+      service:
+        name: apache2
+        state: restarted
+      when: astra_at_ald_apache_default_site.changed or astra_at_ald_apache_config.changed
+  when: inventory_hostname == astra_at_ald_domain_server
+
+- block:
+    - name: astra_at_ald | Ensure NTP and tzdata package is installed
+      apt:
+        name:
+        - ntp
+        - tzdata
+        state: present
+        update_cache: yes
+    
+    - name: astra_at_ald | Set timezone
+      timezone:
+        name: "{{ astra_at_ald_ntp_timezone }}"
+    
+    - name: astra_at_ald | Edit NTP configuration file
+      template:
+        src: "{{ astra_at_ald_templates_path }}/ntp.conf.j2"
+        dest: /etc/ntp.conf
+        owner: root
+        group: root
+        mode: '0644'
+      register: astra_at_ald_ntp_config
+    
+    - name: astra_at_ald | Restart service NTP
+      service:
+        name: ntp
+        state: restarted
+        enabled: yes
+      when: astra_at_ald_ntp_config.changed
+  when: astra_at_ald_ntp_configure
+
+##########################################
+## Section Update Grub
+- block:
+    - name: astra_at_ald | Configure file grub
+      lineinfile:
+        path: /etc/default/grub
+        regexp: "{{ item.src }}"
+        line: "{{ item.dest }}"
+      loop:
+        - { src: '^GRUB_TIMEOUT=.*', dest: 'GRUB_TIMEOUT={{ astra_at_ald_grub_timeout }}' }
+        - { src: '^GRUB_DISABLE_RECOVERY=.*', dest: 'GRUB_DISABLE_RECOVERY="true"' }
+      register: astra_at_ald_grub_config
+    
+    - name: astra_at_ald | Create hash password for grub
+      expect:
+        command: /bin/bash -c "grub-mkpasswd-pbkdf2"
+        responses:
+          (.*)Введите пароль(.*): "{{ astra_at_ald_grub_password }}"
+          (.*)Повторно введите пароль(.*): "{{ astra_at_ald_grub_password }}"
+      register: astra_at_ald_grub_password_hash
+    
+    - name: astra_at_ald | Setting password for grub
+      template:
+        src: "{{ astra_at_ald_templates_path }}/07_password.j2"
+        dest: /etc/grub.d/07_password
+        owner: root
+        group: root
+        mode: '0755'
+      register: astra_at_ald_grub_password_add
+    
+    - name: astra_at_ald | Update grub
+      shell: update-grub
+      when: astra_at_ald_grub_config.changed or astra_at_ald_grub_password_add.changed
+  when: astra_at_ald_grub_edit
+
+##########################################
+## Section Update OS
+- block:
+    - name: astra_at_ald | Upgrade Astra OS via dist-upgrade
+      apt:
+        upgrade: dist
+        update_cache: yes
+        autoremove: yes
+      when: astra_at_ald_os_update_tool == "dist_upgrade"
+    
+    - block:
+        - name: astra_at_ald | Install package astra-update
+          apt:
+            name: astra-update
+            update_cache: yes
+        
+        - name: astra_at_ald | Upgrade Astra OS via astra-update
+          shell: /bin/bash -c "sudo astra-update -A -r"
+      when: astra_at_ald_os_update_tool == "astra_update"
+  when: astra_at_ald_os_update
+##########################################
+
+- name: astra_at_ald | Configuration of a memory cleaning policy
+  replace:
+    path: "{{ item.path }}"
+    regexp: "{{ item.src }}"
+    replace: "{{ item.dest }}"
+  loop:
+    - { path: '/etc/fstab', src: 'errors=remount-ro[\t ]', dest: 'errors=remount-ro,secdelrnd={{ astra_at_ald_fstab_secdelrnd }} ' }
+    - { path: '/etc/fstab', src: 'defaults[\t ]', dest: 'defaults,secdelrnd={{ astra_at_ald_fstab_secdelrnd }} ' }
+    - { path: '/etc/parsec/swap_wiper.conf', src: '^ENABLED=.*', dest: 'ENABLED=Y' }
+
+- name: astra_at_ald | Setting up the program Afick
+  template:
+    src: "{{ astra_at_ald_templates_path }}/afick.conf.j2"
+    dest: /etc/afick.conf
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: astra_at_ald | Setting a record for CD-disk under mandate level
+  lineinfile:
+    path: /usr/sbin/pdp-init-fs
+    regexp: '^/usr/sbin/pdpl-file\s+"0:0:0:ehole"\s+/dev/sr*'
+    line: /usr/sbin/pdpl-file "0:0:0:ehole"      /dev/sr*
+    insertafter: '^fi'
+
+#################################################
+### Section Settings ALD
+- name: astra_at_ald | Install packages for ALD Server
+  apt:
+    name:
+    - ald-server-common
+    - smolensk-security-ald
+    - '{% if ansible_facts.distribution_version == "1.7_x86-64" %}fly-admin-ald-server{% elif ansible_facts.distribution_version == "1.6" %}fly-admin-ald-server{% else %}fly-admin-ald-se{% endif %}'
+    - cifs-utils
+  register: astra_at_ald_server_packages
+  when: inventory_hostname == astra_at_ald_domain_server
+
+- name: astra_at_ald | Install packages for ALD Client
+  apt:
+    name:
+    - ald-client-common
+    - smolensk-security-ald
+    - libpam-mount
+    - cifs-utils
+  register: astra_at_ald_client_packages
+  when: inventory_hostname != astra_at_ald_domain_server
+
+- name: astra_at_ald | Setting the ald.conf file
+  template:
+    src: "{{ astra_at_ald_templates_path }}/ald.conf.j2"
+    dest: /etc/ald/ald.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: astra_at_ald | Create file pass_ald
+  template:
+    src: "{{ astra_at_ald_templates_path }}/pass_ald.j2"
+    dest: /home/user/pass_ald
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: astra_at_ald | Setup Local mandate level
+  template:
+    src: "{{ astra_at_ald_templates_path }}/mac_levels.j2"
+    dest: /etc/parsec/mac_levels
+    owner: root
+    group: root
+    mode: '0644'
+
+- block:
+    - name: astra_at_ald | Initialization Server ALD
+      expect:
+        command: sudo ald-init init
+        responses:
+          (.*)Продолжить(.*): 'yes'
+          (.*)Вы УВЕРЕНЫ, что хотите ВЫПОЛНИТЬ эту операцию(.*): 'yes'
+          (.*)Введите новый главный пароль к базе данных Kerberos(.*): "{{ astra_at_ald_domain_admin_password }}"
+          (.*)Повторите пароль(.*): "{{ astra_at_ald_domain_admin_password }}"
+          (.*)Введите новый пароль администратора Astra Linux Directory(.*): "{{ astra_at_ald_domain_admin_password }}"
+        timeout: 300
+      when: astra_at_ald_server_packages.changed
+    
+    - name: astra_at_ald | Audit setup, password policy and mandate level on the Server ALD
+      shell: |
+        ald-admin user-aud-mod other --succ-hex=0x1FFFF --fail-hex=0x1FFFF --pass-file=/home/user/pass_ald -f
+        ald-admin policy-mod default --max-life="{{ astra_at_ald_domain_users_passmaxdays }}" --min-life="{{ astra_at_ald_domain_users_passmindays }}" --min-length="{{ astra_at_ald_domain_users_passlength }}" --min-classes=4 --history=2 --max-failure="{{ astra_at_ald_domain_users_passdeny }}" --no-failure-count-interval --lock-out-duration="{{ astra_at_ald_domain_users_passlocktime }}" --pass-file=/home/user/pass_ald -f
+        ald-admin maclev-mod 0 "{{ astra_at_ald_domain_namelevel0 }}" --pass-file=/home/user/pass_ald -f
+        ald-admin maclev-mod 1 "{{ astra_at_ald_domain_namelevel1 }}" --pass-file=/home/user/pass_ald -f
+        ald-admin maclev-mod 2 "{{ astra_at_ald_domain_namelevel2 }}" --pass-file=/home/user/pass_ald -f
+        ald-admin maclev-mod 3 "{{ astra_at_ald_domain_namelevel3 }}" --pass-file=/home/user/pass_ald -f
+        ald-admin hgroup-host-add "{{ astra_at_ald_domain_server }}"."{{ astra_at_ald_domain_name }}" --hgroup=Domain\ Computers --pass-file=/home/user/pass_ald -f
+      when: astra_at_ald_server_packages.changed
+    
+    - name: astra_at_ald | Creating users with a mandate level on the Server ALD
+      shell: |
+        ald-admin user-add "{{ item }}" --pass-file=/home/user/pass_ald -f
+        ald-admin user-ald-cap "{{ item }}" --add-hosts --host-group=Domain\ Computers --pass-file=/home/user/pass_ald -f
+        ald-admin user-mac "{{ item }}" --min-lev="{{ astra_at_ald_domain_namelevel0 }}" --max-lev="{{ astra_at_ald_domain_namelevel3 }}" --pass-file=/home/user/pass_ald -f
+      with_items: "{{ astra_at_ald_domain_users }}"
+      when: astra_at_ald_server_packages.changed
+    
+    - name: astra_at_ald | Edit the file template Samba
+      template:
+        src: "{{ astra_at_ald_templates_path }}/smb.conf.j2"
+        dest: /etc/ald/config-templates/smb.conf
+        owner: root
+        group: root
+        mode: '0644'
+      register: astra_at_ald_smb_template
+
+    - block:
+        - name: astra_at_ald | Commit samba config
+          shell: |
+            ald-client commit-config --pass-file=/home/user/pass_ald -f
+            smbcontrol all reload-config
+        
+        - name: astra_at_ald | Restart service smbd
+          service:
+            name: smbd
+            state: restarted
+        
+        - name: astra_at_ald | Restart service nmbd
+          service:
+            name: nmbd
+            state: restarted
+      when: astra_at_ald_smb_template.changed
+
+    - block:
+        - name: astra_at_ald | Create a common resource for confedential documents
+          file:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ item }}"
+            state: directory
+            mode: '0755'
+            owner: "{{ astra_at_ald_owner_conf_dir }}"
+            group: "{{ astra_at_ald_group_conf_dir }}"
+          register: astra_at_ald_create_conf_dir
+          loop:
+            - "{{ astra_at_ald_namedir_ns }}"
+            - "{{ astra_at_ald_namedir_dsp }}"
+            - "{{ astra_at_ald_namedir_s }}"
+            - "{{ astra_at_ald_namedir_ss }}"
+        
+        - name: astra_at_ald | Edit mandate level confedential directory
+          shell: |
+            pdpl-file 3:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"
+            pdpl-file 1:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_dsp }}"
+            pdpl-file 2:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_s }}"
+            pdpl-file 3:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_ss }}"
+          when: astra_at_ald_create_conf_dir.changed
+        
+        - name: astra_at_ald | Create a confedential directory Share
+          file:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ item }}/общая"
+            state: directory
+            mode: '2770'
+            owner: "{{ astra_at_ald_owner_conf_dir }}"
+            group: 'Domain Users'
+          loop:
+            - "{{ astra_at_ald_namedir_ns }}"
+            - "{{ astra_at_ald_namedir_dsp }}"
+            - "{{ astra_at_ald_namedir_s }}"
+            - "{{ astra_at_ald_namedir_ss }}"
+        
+        - name: astra_at_ald | Sets default ACL for confedential directory Share
+          acl:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ item }}/общая"
+            etype: group
+            permissions: rwx
+            default: yes
+            state: present
+          register: astra_at_ald_create_conf_dir_share
+          loop:
+            - "{{ astra_at_ald_namedir_ns }}"
+            - "{{ astra_at_ald_namedir_dsp }}"
+            - "{{ astra_at_ald_namedir_s }}"
+            - "{{ astra_at_ald_namedir_ss }}"
+        
+        - name: astra_at_ald | Edit mandate level confedential directory Share
+          shell: |
+            pdpl-file 1:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_dsp }}"/общая
+            pdpl-file 2:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_s }}"/общая
+            pdpl-file 3:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_ss }}"/общая
+          when: astra_at_ald_create_conf_dir_share.changed
+        
+        - name: astra_at_ald | Create directory Users {{ astra_at_ald_namedir_ns }}
+          file:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ astra_at_ald_namedir_ns }}/{{ item }}"
+            state: directory
+            mode: '0770'
+            owner: "{{ item }}"
+            group: "{{ item }}"
+          with_items: "{{ astra_at_ald_domain_users }}"
+        
+        - name: astra_at_ald | Sets default ACL for directory Users {{ astra_at_ald_namedir_ns }}
+          acl:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ astra_at_ald_namedir_ns }}/{{ item }}"
+            etype: group
+            permissions: rwx
+            default: yes
+            state: present
+          with_items: "{{ astra_at_ald_domain_users }}"
+        
+        - name: astra_at_ald | Create directory Users {{ astra_at_ald_namedir_dsp }}
+          file:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ astra_at_ald_namedir_dsp }}/{{ item }}"
+            state: directory
+            mode: '0770'
+            owner: "{{ item }}"
+            group: "{{ item }}"
+          register: astra_at_ald_create_conf_dir_dsp_users
+          with_items: "{{ astra_at_ald_domain_users }}"
+        
+        - name: astra_at_ald | Sets default ACL for directory Users {{ astra_at_ald_namedir_dsp }}
+          acl:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ astra_at_ald_namedir_dsp }}/{{ item }}"
+            etype: group
+            permissions: rwx
+            default: yes
+            state: present
+          with_items: "{{ astra_at_ald_domain_users }}"
+        
+        - name: astra_at_ald | Edit mandate level confedential directory Users {{ astra_at_ald_namedir_dsp }}
+          shell: pdpl-file 1:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_dsp }}"/"{{ item }}"
+          with_items: "{{ astra_at_ald_domain_users }}"
+          when: astra_at_ald_create_conf_dir_dsp_users.changed
+    
+        - name: astra_at_ald | Create directory Users {{ astra_at_ald_namedir_s }}
+          file:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ astra_at_ald_namedir_s }}/{{ item }}"
+            state: directory
+            mode: '0770'
+            owner: "{{ item }}"
+            group: "{{ item }}"
+          register: astra_at_ald_create_conf_dir_s_users
+          with_items: "{{ astra_at_ald_domain_users }}"
+        
+        - name: astra_at_ald | Sets default ACL for directory Users {{ astra_at_ald_namedir_s }}
+          acl:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ astra_at_ald_namedir_s }}/{{ item }}"
+            etype: group
+            permissions: rwx
+            default: yes
+            state: present
+          with_items: "{{ astra_at_ald_domain_users }}"
+        
+        - name: astra_at_ald | Edit mandate level confedential directory Users {{ astra_at_ald_namedir_s }}
+          shell: pdpl-file 2:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_s }}"/"{{ item }}"
+          with_items: "{{ astra_at_ald_domain_users }}"
+          when: astra_at_ald_create_conf_dir_s_users.changed
+        
+        - name: astra_at_ald | Create directory Users {{ astra_at_ald_namedir_ss }}
+          file:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ astra_at_ald_namedir_ss }}/{{ item }}"
+            state: directory
+            mode: '0770'
+            owner: "{{ item }}"
+            group: "{{ item }}"
+          register: astra_at_ald_create_conf_dir_ss_users
+          with_items: "{{ astra_at_ald_domain_users }}"
+        
+        - name: astra_at_ald | Sets default ACL for directory Users {{ astra_at_ald_namedir_ss }}
+          acl:
+            path: "/{{ astra_at_ald_namedir_docs }}/{{ astra_at_ald_namedir_ss }}/{{ item }}"
+            etype: group
+            permissions: rwx
+            default: yes
+            state: present
+          with_items: "{{ astra_at_ald_domain_users }}"
+    
+        - name: astra_at_ald | Edit mandate level confedential directory Users {{ astra_at_ald_namedir_ss }}
+          shell: pdpl-file 3:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_ss }}"/"{{ item }}"
+          with_items: "{{ astra_at_ald_domain_users }}"
+          when: astra_at_ald_create_conf_dir_ss_users.changed
+        
+        - name: astra_at_ald | Remove bit CCNR mandate level confedential directory
+          shell: |
+            pdpl-file -R 1:0:0 /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_dsp }}"
+            pdpl-file -R 2:0:0 /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_s }}"
+            pdpl-file -R 3:0:0 /"{{ astra_at_ald_namedir_docs }}"/"{{ astra_at_ald_namedir_ss }}"
+          when: astra_at_ald_create_conf_dir.changed
+      when: astra_at_ald_namedir_docs_create
+  when: inventory_hostname == astra_at_ald_domain_server
+
+- name: astra_at_ald | Initialization ALD Clients
+  shell: |
+    ald-client commit-config --pass-file=/home/user/pass_ald -f
+    ald-client join "{{ astra_at_ald_domain_server }}"."{{ astra_at_ald_domain_name }}" --hostname "{{ inventory_hostname }}"."{{ astra_at_ald_domain_name }}" --admin="{{ astra_at_ald_domain_admin }}" --pass-file=/home/user/pass_ald -f
+  when: astra_at_ald_client_packages.changed and inventory_hostname != astra_at_ald_domain_server
+
+- block:
+    - name: astra_at_ald | Create a confedential directory ALD Clients
+      file:
+        path: "/{{ astra_at_ald_namedir_docs }}"
+        state: directory
+        mode: '0770'
+        owner: "{{ astra_at_ald_owner_conf_dir }}"
+        group: 'Domain Users'
+      register: astra_at_ald_create_conf_dir_on_clients
+
+    - name: astra_at_ald | Edit mandate level confedential directory ALD Clients
+      shell: pdpl-file 3:0:0:ccnr /"{{ astra_at_ald_namedir_docs }}"
+      when: astra_at_ald_create_conf_dir_on_clients.changed
+
+    - name: astra_at_ald | Setting pam_mount for auto mount directory {{ astra_at_ald_namedir_docs }}
+      template:
+        src: "{{ astra_at_ald_templates_path }}/pam_mount.conf.xml.j2"
+        dest: /etc/security/pam_mount.conf.xml
+        owner: root
+        group: root
+        mode: '0644'
+    
+    - name: astra_at_ald | Remove pam_mount in file common-auth common-session
+      lineinfile:
+        path: "{{ item }}"
+        regexp: '^(auth|session)\s+optional\s+pam_mount.so'
+        state: absent
+      loop:
+        - /etc/pam.d/common-auth
+        - /etc/pam.d/common-session
+    
+    - name: astra_at_ald | Edit pam_mount in file login, fly-dm, common-auth
+      lineinfile:
+        path: "{{ item.path }}"
+        regexp: "{{ item.reg }}"
+        line: "{{ item.line }}"
+        insertafter: "{{ item.after }}"
+      loop:
+        - { path: '/etc/pam.d/common-auth', reg: '^auth\s+optional\s+pam_mount.so', line: 'auth    optional        pam_mount.so', after: '^auth\s+required\s+pam_ald.so' }
+        - { path: '/etc/pam.d/login', reg: '^session optional pam_mount.so disable_interactive', line: 'session optional pam_mount.so disable_interactive', after: 'session required pam_ald_mac.so' }
+        - { path: '/etc/pam.d/fly-dm', reg: '^session optional pam_mount.so disable_interactive', line: 'session optional pam_mount.so disable_interactive', after: 'session required pam_ald_mac.so' }
+  when: astra_at_ald_mount_directory_docs and inventory_hostname != astra_at_ald_domain_server
+
+- name: astra_at_ald | Delete file pass_ald
+  file:
+    path: /home/user/pass_ald
+    state: absent

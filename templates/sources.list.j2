@@ -1,0 +1,11 @@
+{% if inventory_hostname == astra_at_ald_domain_server %}
+# Репозиторий основного диска
+deb file:{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_main }} {{ ansible_facts.lsb.codename }} main contrib non-free
+# Репозиторий диска с обновлениями
+deb file:{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_update }} {{ ansible_facts.lsb.codename }} main contrib non-free
+{% else %}
+# Репозиторий основного диска
+deb http://{{ astra_at_ald_domain_server }}.{{ astra_at_ald_domain_name }}{{ astra_at_ald_repo_dir_http }}/{{ astra_at_ald_repo_dir_main }} {{ ansible_facts.lsb.codename }} main contrib non-free
+# Репозиторий диска с обновлениями
+deb http://{{ astra_at_ald_domain_server }}.{{ astra_at_ald_domain_name }}{{ astra_at_ald_repo_dir_http }}/{{ astra_at_ald_repo_dir_update }} {{ ansible_facts.lsb.codename }} main contrib non-free
+{% endif %}

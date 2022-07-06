@@ -1,0 +1,80 @@
+---
+# defaults file for astra_at_ald
+astra_at_ald_files_path: "{{ role_path }}/files"
+astra_at_ald_templates_path: "{{ role_path }}/templates"
+
+# Создание репозитория на сервере ALD:
+astra_at_ald_repo_local_create: true
+# Путь до директории где находятся ISO образы основного диска и диска с обновлениями
+astra_at_ald_iso_path: /home/user/astra
+# Названия ISO образов:
+astra_at_ald_iso_main_15: smolensk-1.5.iso
+astra_at_ald_iso_update_15: astra-update20201201SE15.iso
+astra_at_ald_iso_main_16: smolensk-1.6.iso
+astra_at_ald_iso_update_16: astra-update20211126SE16.iso
+astra_at_ald_iso_main_17: smolensk-1.7.iso
+astra_at_ald_iso_update_17: astra-update20211126SE17.iso
+# Директория где будут созданы репозитории основного диска и диска с обновлениями:
+astra_at_ald_repo_dir: /srv/repo/smolensk
+astra_at_ald_repo_dir_main: main
+astra_at_ald_repo_dir_update: update
+astra_at_ald_repo_dir_iso1: iso1
+astra_at_ald_repo_dir_iso2: iso2
+# Директория, которая анонсирована по HTTP-протоколу:
+astra_at_ald_repo_dir_http: /repo/smolensk
+
+# Настройка NTP-сервера и часового пояса на сервере ALD:
+astra_at_ald_ntp_configure: true
+astra_at_ald_ntp_timezone: Europe/Moscow
+
+# Настройка загрузчика grub (true-настройка выполняется, false-не выпоняется):
+astra_at_ald_grub_edit: false
+astra_at_ald_grub_timeout: 2
+astra_at_ald_grub_password: 111111Aa
+astra_at_ald_fstab_secdelrnd: 2
+
+# Установка обновлений операционной системы (true-устанавливаем обновления, false-не устанавливаем):
+astra_at_ald_os_update: false
+# Способ установки обновления (dist_upgrade или astra_update):
+astra_at_ald_os_update_tool: astra_update
+
+# Задаем имя сервера и название домена ALD:
+astra_at_ald_domain_server: dc
+astra_at_ald_domain_name: domain.ald
+# Задаем пароль администратора домена и группы по умолчанию для пользователей домена:
+astra_at_ald_domain_admin: admin/admin
+astra_at_ald_domain_admin_password: 111111Aa
+astra_at_ald_domain_local_groups: users,audio,video,scanner,cdrom
+
+# Задаем количество пользователей ALD и политику паролей:
+astra_at_ald_domain_users: 
+  - user1
+  - user2
+astra_at_ald_domain_users_password: 1qaz!QAZ
+# Задаем политику паролей для пользователей:
+astra_at_ald_domain_users_passdeny: 5
+astra_at_ald_domain_users_passlength: 8
+astra_at_ald_domain_users_passlocktime: 5m
+astra_at_ald_domain_users_passmaxdays: 30d
+astra_at_ald_domain_users_passmindays: 0d
+# Задаем название уровней конфеденциальности в ОС:
+astra_at_ald_domain_namelevel0: Несекретно
+astra_at_ald_domain_namelevel1: ДСП
+astra_at_ald_domain_namelevel2: Секретно
+astra_at_ald_domain_namelevel3: Совершенно_секретно
+# Владелец/группа директории с конфеденциальными документами:
+astra_at_ald_owner_conf_dir: user
+astra_at_ald_group_conf_dir: users
+
+# Секция с настройками директории с конфеденциальными документами (по умолчанию docs):
+astra_at_ald_namedir_docs_create: true
+astra_at_ald_namedir_docs: DOCS
+astra_at_ald_namedir_ns: Несекретно
+astra_at_ald_namedir_dsp: ДСП
+astra_at_ald_namedir_s: Секретно
+astra_at_ald_namedir_ss: Совершенно_секретно
+
+# Настройка автомонтирования директории с конфеденциальными документами на клиентах ALD (модуль pam_mount)
+astra_at_ald_mount_directory_docs: true
+astra_at_ald_mount_directory_point: "/{{ astra_at_ald_namedir_docs }}"
+astra_at_ald_mount_directory_options: "user=%(USER),rw,sec=krb5,cruid=%(USER),iocharset=utf8,setuids,perm,file_mode=0660,dir_mode=0770,vers=1.0"

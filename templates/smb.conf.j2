@@ -1,0 +1,74 @@
+# --ALD_TEMPLATE_COMMENT--
+#
+# This is a template for /etc/samba/smb.conf file. 
+# If altered - the following command should be invoked to update the server:
+#
+# $ ald-init commit-config
+#
+# Do not alter this file unless you know what you are doing.
+#
+# --ALD_COMMENT_END--
+
+
+[global]
+
+allow trusted domains = no
+client signing = auto
+server signing = ${smb_server_signing}
+deadtime = 10
+dns proxy = no
+encrypt passwords = yes
+host msdfs = no
+security = user
+log file = /var/log/samba/log.%m
+log level = 0
+max log size = 10000 
+#in kB
+passdb backend = tdbsam
+realm = ${realm}
+server string = ALD CIFS file server
+workgroup = ${realm}
+unix extensions = yes
+unix password sync = no
+kerberos method = dedicated keytab
+dedicated keytab file = /etc/krb5.keytab
+client use spnego = yes
+usershare path = /var/lib/samba/usershares
+usershare max shares = 10
+usershare prefix deny list = /etc /dev
+# disable netbios = yes
+# display charset = UTF8
+use socket MAC label = yes
+server max protocol = NT1
+server min protocol = NT1
+
+[homes]
+
+available = ${smb_on}
+comment = Home directories
+browseable = no
+case sensitive = yes
+create mask = 0750
+directory mask = 0750
+delete readonly = yes
+ea support = yes
+fstype = Samba
+hide dot files = no
+locking = yes
+invalid users = root
+valid users = %S
+path = ${server_export_dir}/%u
+writable = yes
+smb encrypt = auto
+wide links = yes
+
+[{{ astra_at_ald_namedir_docs }}]
+
+comment = For security docs
+guest ok = yes
+path = /{{ astra_at_ald_namedir_docs }}
+read only = no
+create mask = 0660
+directory mask = 0770
+force create mode = 0660
+force directory mode = 0770
