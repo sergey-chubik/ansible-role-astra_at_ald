@@ -3,11 +3,14 @@
 astra_at_ald_files_path: "{{ role_path }}/files"
 astra_at_ald_templates_path: "{{ role_path }}/templates"
 
-# Создание репозитория на сервере ALD:
-astra_at_ald_repo_local_create: true
+# Создать репозиторий базового диска на сервере ALD (true-создавать, false-несоздавать):
+astra_at_ald_repo_main_local_create: true
+# Создать репозиторий диска с обновлениями на сервере ALD (true-создавать, false-несоздавать):
+astra_at_ald_repo_update_local_create: false
+
 # Путь до директории где находятся ISO образы основного диска и диска с обновлениями
 astra_at_ald_iso_path: /home/user/astra
-# Названия ISO образов:
+# Названия ISO образов (базового и если нужно то образа с обновлениями):
 astra_at_ald_iso_main_15: smolensk-1.5.iso
 astra_at_ald_iso_update_15: astra-update20201201SE15.iso
 astra_at_ald_iso_main_16: smolensk-1.6.iso
@@ -51,10 +54,11 @@ astra_at_ald_domain_users:
   - user1
   - user2
 astra_at_ald_domain_users_password: 1qaz!QAZ
-# Задаем политику паролей для пользователей:
+# Задаем политику паролей для пользователей (default):
 astra_at_ald_domain_users_passdeny: 5
 astra_at_ald_domain_users_passlength: 8
-astra_at_ald_domain_users_passlocktime: 5m
+astra_at_ald_domain_users_passhistory: 2
+astra_at_ald_domain_users_passlocktime: 1m
 astra_at_ald_domain_users_passmaxdays: 30d
 astra_at_ald_domain_users_passmindays: 0d
 # Задаем название уровней конфеденциальности в ОС:

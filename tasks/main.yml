@@ -1,57 +1,79 @@
 ---
 # tasks file for astra_at_ald
-- block:
-    - name: astra_at_ald | Creation of directory for repositories
-      file:
-        path: "{{ astra_at_ald_repo_dir }}"
-        state: directory
-        mode: '0755'
-        owner: root
-        group: root
+- name: astra_at_ald | Creation of directory for repositories
+  file:
+    path: "{{ astra_at_ald_repo_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  when: (astra_at_ald_repo_main_local_create or astra_at_ald_repo_update_local_create) and inventory_hostname == astra_at_ald_domain_server
     
-    - name: astra_at_ald | Mount ISO images read-only
+- block:
+    - name: astra_at_ald | Mount ISO images "{% if ansible_facts.distribution_version == '1.7_x86-64' %}{{ astra_at_ald_iso_main_17 }}{% elif ansible_facts.distribution_version == '1.6' %}{{ astra_at_ald_iso_main_16 }}{% else %}{{ astra_at_ald_iso_main_15 }}{% endif %}" read-only
       mount:
-        path: "{{ astra_at_ald_repo_dir }}/{{ item.path }}"
-        src: "{{ astra_at_ald_iso_path }}/{{ item.src }}"
+        path: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_iso1 }}"
+        src: "{{ astra_at_ald_iso_path }}/{% if ansible_facts.distribution_version == '1.7_x86-64' %}{{ astra_at_ald_iso_main_17 }}{% elif ansible_facts.distribution_version == '1.6' %}{{ astra_at_ald_iso_main_16 }}{% else %}{{ astra_at_ald_iso_main_15 }}{% endif %}"
         fstype: iso9660
         opts: ro,noauto
         state: mounted
-      loop:
-        -  { src: '{% if ansible_facts.distribution_version == "1.7_x86-64" %}{{ astra_at_ald_iso_main_17 }}{% elif ansible_facts.distribution_version == "1.6" %}{{ astra_at_ald_iso_main_16 }}{% else %}{{ astra_at_ald_iso_main_15 }}{% endif %}', path: '{{ astra_at_ald_repo_dir_iso1 }}' }
-        -  { src: '{% if ansible_facts.distribution_version == "1.7_x86-64" %}{{ astra_at_ald_iso_update_17 }}{% elif ansible_facts.distribution_version == "1.6" %}{{ astra_at_ald_iso_update_16 }}{% else %}{{ astra_at_ald_iso_update_15 }}{% endif %}', path: '{{ astra_at_ald_repo_dir_iso2 }}' }
     
-    - name: astra_at_ald | Synchronize file from ISO images to repositories
+    - name: astra_at_ald | Synchronize file from ISO images to repositories Main
       synchronize:
-        src: "{{ astra_at_ald_repo_dir }}/{{ item.src }}/"
-        dest: "{{ astra_at_ald_repo_dir }}/{{ item.dest }}"
+        src: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_iso1 }}/"
+        dest: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_main }}"
         recursive: yes
       delegate_to: "{{ inventory_hostname }}"
-      loop:
-        -  { src: '{{ astra_at_ald_repo_dir_iso1 }}', dest: '{{ astra_at_ald_repo_dir_main }}' }
-        -  { src: '{{ astra_at_ald_repo_dir_iso2 }}', dest: '{{ astra_at_ald_repo_dir_update }}' }
 
     # Не поддерживает рекурсивное копирование в версии 2.7
-    # - name: astra_at_ald | Copy file from ISO images to repositories
+    # - name: astra_at_ald | Copy file from ISO images to repositories Main
     #   copy:
-    #     src: "{{ astra_at_ald_repo_dir }}/{{ item.src }}/"
-    #     dest: "{{ astra_at_ald_repo_dir }}/{{ item.dest }}"
+    #     src: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_iso1 }}/"
+    #     dest: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_main }}"
     #     remote_src: yes
     #     follow: yes
     #     mode: '0755'
     #     owner: root
     #     group: root
-    #   loop:
-    #     -  { src: '{{ astra_at_ald_repo_dir_iso1 }}', dest: '{{ astra_at_ald_repo_dir_main }}' }
-    #     -  { src: '{{ astra_at_ald_repo_dir_iso2 }}', dest: '{{ astra_at_ald_repo_dir_update }}' }
     
-    - name: astra_at_ald | Unmount ISO images
+    - name: astra_at_ald | Unmount ISO images Main
       mount:
-        path: "{{ astra_at_ald_repo_dir }}/{{ item }}"
+        path: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_iso1 }}"
         state: absent
-      loop:
-        -  "{{ astra_at_ald_repo_dir_iso1 }}"
-        -  "{{ astra_at_ald_repo_dir_iso2 }}"
-  when: inventory_hostname == astra_at_ald_domain_server and astra_at_ald_repo_local_create
+  when: inventory_hostname == astra_at_ald_domain_server and astra_at_ald_repo_main_local_create
+
+- block:
+    - name: astra_at_ald | Mount ISO images "{% if ansible_facts.distribution_version == '1.7_x86-64' %}{{ astra_at_ald_iso_update_17 }}{% elif ansible_facts.distribution_version == '1.6' %}{{ astra_at_ald_iso_update_16 }}{% else %}{{ astra_at_ald_iso_update_15 }}{% endif %}" read-only
+      mount:
+        path: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_iso2 }}"
+        src: "{{ astra_at_ald_iso_path }}/{% if ansible_facts.distribution_version == '1.7_x86-64' %}{{ astra_at_ald_iso_update_17 }}{% elif ansible_facts.distribution_version == '1.6' %}{{ astra_at_ald_iso_update_16 }}{% else %}{{ astra_at_ald_iso_update_15 }}{% endif %}"
+        fstype: iso9660
+        opts: ro,noauto
+        state: mounted
+    
+    - name: astra_at_ald | Synchronize file from ISO images to repositories Update
+      synchronize:
+        src: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_iso2 }}/"
+        dest: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_update }}"
+        recursive: yes
+      delegate_to: "{{ inventory_hostname }}"
+
+    # Не поддерживает рекурсивное копирование в версии 2.7
+    # - name: astra_at_ald | Copy file from ISO images to repositories Update
+    #   copy:
+    #     src: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_iso2 }}/"
+    #     dest: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_update }}"
+    #     remote_src: yes
+    #     follow: yes
+    #     mode: '0755'
+    #     owner: root
+    #     group: root
+    
+    - name: astra_at_ald | Unmount ISO images Update
+      mount:
+        path: "{{ astra_at_ald_repo_dir }}/{{ astra_at_ald_repo_dir_iso2 }}"
+        state: absent
+  when: inventory_hostname == astra_at_ald_domain_server and astra_at_ald_repo_update_local_create
 
 - name: astra_at_ald | Setting repositories in sources.list
   template:
@@ -245,25 +267,22 @@
     line: /usr/sbin/pdpl-file "0:0:0:ehole"      /dev/sr*
     insertafter: '^fi'
 
-#################################################
-### Section Settings ALD
+################################################
+## Section Settings ALD
 - name: astra_at_ald | Install packages for ALD Server
   apt:
     name:
+    - '{% if ansible_facts.distribution_version == "1.7_x86-64" %}fly-admin-ald-server{% elif ansible_facts.distribution_version == "1.6" %}fly-admin-ald-server{% else %}fly-admin-ald-se{% endif %}'
     - ald-server-common
     - smolensk-security-ald
-    - '{% if ansible_facts.distribution_version == "1.7_x86-64" %}fly-admin-ald-server{% elif ansible_facts.distribution_version == "1.6" %}fly-admin-ald-server{% else %}fly-admin-ald-se{% endif %}'
-    - cifs-utils
   register: astra_at_ald_server_packages
   when: inventory_hostname == astra_at_ald_domain_server
 
 - name: astra_at_ald | Install packages for ALD Client
   apt:
     name:
-    - ald-client-common
-    - smolensk-security-ald
+    - fly-admin-ald-client
     - libpam-mount
-    - cifs-utils
   register: astra_at_ald_client_packages
   when: inventory_hostname != astra_at_ald_domain_server
 
@@ -307,7 +326,7 @@
     - name: astra_at_ald | Audit setup, password policy and mandate level on the Server ALD
       shell: |
         ald-admin user-aud-mod other --succ-hex=0x1FFFF --fail-hex=0x1FFFF --pass-file=/home/user/pass_ald -f
-        ald-admin policy-mod default --max-life="{{ astra_at_ald_domain_users_passmaxdays }}" --min-life="{{ astra_at_ald_domain_users_passmindays }}" --min-length="{{ astra_at_ald_domain_users_passlength }}" --min-classes=4 --history=2 --max-failure="{{ astra_at_ald_domain_users_passdeny }}" --no-failure-count-interval --lock-out-duration="{{ astra_at_ald_domain_users_passlocktime }}" --pass-file=/home/user/pass_ald -f
+        ald-admin policy-mod default --max-life="{{ astra_at_ald_domain_users_passmaxdays }}" --min-life="{{ astra_at_ald_domain_users_passmindays }}" --min-length="{{ astra_at_ald_domain_users_passlength }}" --min-classes=4 --history="{{ astra_at_ald_domain_users_passhistory }}" --max-failure="{{ astra_at_ald_domain_users_passdeny }}" --no-failure-count-interval --lock-out-duration="{{ astra_at_ald_domain_users_passlocktime }}" --pass-file=/home/user/pass_ald -f
         ald-admin maclev-mod 0 "{{ astra_at_ald_domain_namelevel0 }}" --pass-file=/home/user/pass_ald -f
         ald-admin maclev-mod 1 "{{ astra_at_ald_domain_namelevel1 }}" --pass-file=/home/user/pass_ald -f
         ald-admin maclev-mod 2 "{{ astra_at_ald_domain_namelevel2 }}" --pass-file=/home/user/pass_ald -f
